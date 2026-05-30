@@ -18,7 +18,7 @@ app.use(express.static(path.join(__dirname, 'Public')));
 
 // Session configuration
 app.use(session({
-  secret: process.env.SESSION_SECRET || 'f8e7d6c5b4a392817065f4e3d2c1b0af8e7d6c5b4a392817065f4e3d2c1b0a9',
+  secret: process.env.SESSION_SECRET || 'f8e7d6c5b4a392817065f4e3d2c1b0a9f8e7d6c5b4a392817065f4e3d2c1b0a9',
   resave: false,
   saveUninitialized: false,
   cookie: {
@@ -47,7 +47,7 @@ const isAuthenticated = (req, res, next) => {
 
 // ============= PUBLIC API ENDPOINTS =============
 
-// Submit a suggestion (public endpoint - can be used from any website)
+// POST - Submit a suggestion (public endpoint)
 app.post('/api/suggestions', (req, res) => {
   try {
     const { name, email, message, category } = req.body;
@@ -82,9 +82,78 @@ app.post('/api/suggestions', (req, res) => {
   }
 });
 
+// GET - View all suggestions (public endpoint - no auth required)
+app.get('/api/suggestions', (req, res) => {
+  try {
+    const { status, category } = req.query;
+    
+    let filteredSuggestions = [...suggestions];
+    
+    // Filter by status
+    if (status) {
+      filteredSuggestions = filteredSuggestions.filter(s => s.status === status);
+    }
+    
+    // Filter by category
+    if (category) {
+      filteredSuggestions = filteredSuggestions.filter(s => s.category === category);
+    }
+    
+    // Only return safe fields
+    const safeSuggestions = filteredSuggestions.map(s => ({
+      id: s.id,
+      name: s.name,
+      email: s.email,
+      message: s.message,
+      category: s.category,
+      status: s.status,
+      createdAt: s.createdAt
+    }));
+    
+    res.json({
+      success: true,
+      total: safeSuggestions.length,
+      suggestions: safeSuggestions
+    });
+  } catch (error) {
+    console.error('Error fetching suggestions:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET - View single suggestion by ID (public endpoint - no auth required)
+app.get('/api/suggestions/:id', (req, res) => {
+  try {
+    const suggestion = suggestions.find(s => s.id === req.params.id);
+    
+    if (!suggestion) {
+      return res.status(404).json({ error: 'Suggestion not found' });
+    }
+    
+    // Only return safe fields
+    const safeSuggestion = {
+      id: suggestion.id,
+      name: suggestion.name,
+      email: suggestion.email,
+      message: suggestion.message,
+      category: suggestion.category,
+      status: suggestion.status,
+      createdAt: suggestion.createdAt
+    };
+    
+    res.json({
+      success: true,
+      suggestion: safeSuggestion
+    });
+  } catch (error) {
+    console.error('Error fetching suggestion:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // ============= ADMIN AUTH ENDPOINTS =============
 
-// Login endpoint
+// POST - Admin login
 app.post('/api/admin/login', (req, res) => {
   try {
     const { username, password } = req.body;
@@ -122,7 +191,7 @@ app.post('/api/admin/login', (req, res) => {
   }
 });
 
-// Logout endpoint
+// POST - Admin logout
 app.post('/api/admin/logout', isAuthenticated, (req, res) => {
   req.session.destroy((err) => {
     if (err) {
@@ -133,7 +202,7 @@ app.post('/api/admin/logout', isAuthenticated, (req, res) => {
   });
 });
 
-// Check auth status
+// GET - Check auth status
 app.get('/api/admin/check-auth', (req, res) => {
   if (req.session && req.session.isAdmin) {
     res.json({ 
@@ -147,10 +216,10 @@ app.get('/api/admin/check-auth', (req, res) => {
 
 // ============= ADMIN SUGGESTION MANAGEMENT ENDPOINTS =============
 
-// Get all suggestions (admin only)
+// GET - Admin get all suggestions (with full details)
 app.get('/api/admin/suggestions', isAuthenticated, (req, res) => {
   try {
-    const { status, category, page = 1, limit = 20 } = req.query;
+    const { status, category } = req.query;
     
     let filteredSuggestions = [...suggestions];
     
@@ -164,17 +233,10 @@ app.get('/api/admin/suggestions', isAuthenticated, (req, res) => {
       filteredSuggestions = filteredSuggestions.filter(s => s.category === category);
     }
     
-    // Pagination
-    const startIndex = (page - 1) * limit;
-    const endIndex = startIndex + parseInt(limit);
-    const paginatedSuggestions = filteredSuggestions.slice(startIndex, endIndex);
-    
     res.json({
       success: true,
       total: filteredSuggestions.length,
-      page: parseInt(page),
-      totalPages: Math.ceil(filteredSuggestions.length / limit),
-      suggestions: paginatedSuggestions
+      suggestions: filteredSuggestions
     });
   } catch (error) {
     console.error('Error fetching suggestions:', error);
@@ -182,7 +244,7 @@ app.get('/api/admin/suggestions', isAuthenticated, (req, res) => {
   }
 });
 
-// Get single suggestion (admin only)
+// GET - Admin get single suggestion (with full details)
 app.get('/api/admin/suggestions/:id', isAuthenticated, (req, res) => {
   try {
     const suggestion = suggestions.find(s => s.id === req.params.id);
@@ -198,7 +260,7 @@ app.get('/api/admin/suggestions/:id', isAuthenticated, (req, res) => {
   }
 });
 
-// Update suggestion status (admin only)
+// PATCH - Update suggestion status
 app.patch('/api/admin/suggestions/:id', isAuthenticated, (req, res) => {
   try {
     const { status } = req.body;
@@ -229,7 +291,7 @@ app.patch('/api/admin/suggestions/:id', isAuthenticated, (req, res) => {
   }
 });
 
-// Delete suggestion (admin only)
+// DELETE - Delete suggestion
 app.delete('/api/admin/suggestions/:id', isAuthenticated, (req, res) => {
   try {
     const suggestionIndex = suggestions.findIndex(s => s.id === req.params.id);
@@ -247,7 +309,7 @@ app.delete('/api/admin/suggestions/:id', isAuthenticated, (req, res) => {
   }
 });
 
-// Get statistics (admin only)
+// GET - Admin statistics
 app.get('/api/admin/statistics', isAuthenticated, (req, res) => {
   try {
     const stats = {
@@ -287,9 +349,12 @@ app.listen(PORT, () => {
   console.log(`📋 Admin panel: http://localhost:${PORT}/admin`);
   console.log(`🔑 Login with username: ${process.env.ADMIN_USERNAME || 'admin'}`);
   console.log(`🔒 Password: ${process.env.ADMIN_PASSWORD || 'admin123'}`);
-  console.log(`\n📡 API Endpoints:`);
-  console.log(`   POST /api/suggestions - Submit suggestion (public)`);
+  console.log(`\n📡 Public API Endpoints (No Auth Required):`);
+  console.log(`   GET  /api/suggestions - View all suggestions`);
+  console.log(`   GET  /api/suggestions/:id - View single suggestion`);
+  console.log(`   POST /api/suggestions - Submit new suggestion`);
+  console.log(`\n📡 Admin API Endpoints (Auth Required):`);
   console.log(`   POST /api/admin/login - Admin login`);
-  console.log(`   GET /api/admin/suggestions - View all suggestions`);
-  console.log(`   GET /api/admin/statistics - View statistics`);
+  console.log(`   GET  /api/admin/suggestions - View all suggestions (admin)`);
+  console.log(`   GET  /api/admin/statistics - View statistics`);
 });
