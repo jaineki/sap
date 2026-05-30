@@ -33,7 +33,6 @@ let suggestions = [];
 // Admin credentials (in production, use database)
 const ADMIN_CREDENTIALS = {
   username: process.env.ADMIN_USERNAME || 'admin',
-  // Hash password on startup
   passwordHash: bcrypt.hashSync(process.env.ADMIN_PASSWORD || 'selovasx2024', 10)
 };
 
@@ -48,18 +47,26 @@ const isAuthenticated = (req, res, next) => {
 // ============= PUBLIC API ENDPOINTS =============
 
 // POST - Submit a suggestion (public endpoint)
+// NOW ONLY name and message are required; email & category are optional
 app.post('/api/suggestions', (req, res) => {
   try {
     const { name, email, message, category } = req.body;
 
+    // Validate required fields: name and message
+    if (!name || name.trim() === '') {
+      return res.status(400).json({ error: 'Name is required' });
+    }
     if (!message || message.trim() === '') {
       return res.status(400).json({ error: 'Message is required' });
+    }
+    if (message.trim().length < 10) {
+      return res.status(400).json({ error: 'Message must be at least 10 characters' });
     }
 
     const suggestion = {
       id: Date.now().toString(),
-      name: name || 'Anonymous',
-      email: email || 'Not provided',
+      name: name.trim(),
+      email: email ? email.trim() : 'Not provided',
       message: message.trim(),
       category: category || 'General',
       status: 'unread',
@@ -89,12 +96,9 @@ app.get('/api/suggestions', (req, res) => {
     
     let filteredSuggestions = [...suggestions];
     
-    // Filter by status
     if (status) {
       filteredSuggestions = filteredSuggestions.filter(s => s.status === status);
     }
-    
-    // Filter by category
     if (category) {
       filteredSuggestions = filteredSuggestions.filter(s => s.category === category);
     }
@@ -125,12 +129,9 @@ app.get('/api/suggestions', (req, res) => {
 app.get('/api/suggestions/:id', (req, res) => {
   try {
     const suggestion = suggestions.find(s => s.id === req.params.id);
-    
     if (!suggestion) {
       return res.status(404).json({ error: 'Suggestion not found' });
     }
-    
-    // Only return safe fields
     const safeSuggestion = {
       id: suggestion.id,
       name: suggestion.name,
@@ -140,11 +141,7 @@ app.get('/api/suggestions/:id', (req, res) => {
       status: suggestion.status,
       createdAt: suggestion.createdAt
     };
-    
-    res.json({
-      success: true,
-      suggestion: safeSuggestion
-    });
+    res.json({ success: true, suggestion: safeSuggestion });
   } catch (error) {
     console.error('Error fetching suggestion:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -153,62 +150,41 @@ app.get('/api/suggestions/:id', (req, res) => {
 
 // ============= ADMIN AUTH ENDPOINTS =============
 
-// POST - Admin login
 app.post('/api/admin/login', (req, res) => {
   try {
     const { username, password } = req.body;
-
     if (!username || !password) {
       return res.status(400).json({ error: 'Username and password are required' });
     }
-
-    // Verify credentials
     if (username !== ADMIN_CREDENTIALS.username) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
-
     const isValidPassword = bcrypt.compareSync(password, ADMIN_CREDENTIALS.passwordHash);
-    
     if (!isValidPassword) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
-
-    // Create session
     req.session.isAdmin = true;
     req.session.username = username;
     req.session.loginTime = new Date().toISOString();
-
     console.log(`Admin login successful: ${username}`);
-    
-    res.json({
-      success: true,
-      message: 'Login successful',
-      username: username
-    });
+    res.json({ success: true, message: 'Login successful', username: username });
   } catch (error) {
     console.error('Login error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-// POST - Admin logout
 app.post('/api/admin/logout', isAuthenticated, (req, res) => {
   req.session.destroy((err) => {
-    if (err) {
-      return res.status(500).json({ error: 'Could not log out' });
-    }
+    if (err) return res.status(500).json({ error: 'Could not log out' });
     res.clearCookie('connect.sid');
     res.json({ success: true, message: 'Logged out successfully' });
   });
 });
 
-// GET - Check auth status
 app.get('/api/admin/check-auth', (req, res) => {
   if (req.session && req.session.isAdmin) {
-    res.json({ 
-      isAuthenticated: true, 
-      username: req.session.username 
-    });
+    res.json({ isAuthenticated: true, username: req.session.username });
   } else {
     res.json({ isAuthenticated: false });
   }
@@ -216,23 +192,16 @@ app.get('/api/admin/check-auth', (req, res) => {
 
 // ============= ADMIN SUGGESTION MANAGEMENT ENDPOINTS =============
 
-// GET - Admin get all suggestions (with full details)
 app.get('/api/admin/suggestions', isAuthenticated, (req, res) => {
   try {
     const { status, category } = req.query;
-    
     let filteredSuggestions = [...suggestions];
-    
-    // Filter by status
     if (status) {
       filteredSuggestions = filteredSuggestions.filter(s => s.status === status);
     }
-    
-    // Filter by category
     if (category) {
       filteredSuggestions = filteredSuggestions.filter(s => s.category === category);
     }
-    
     res.json({
       success: true,
       total: filteredSuggestions.length,
@@ -244,15 +213,10 @@ app.get('/api/admin/suggestions', isAuthenticated, (req, res) => {
   }
 });
 
-// GET - Admin get single suggestion (with full details)
 app.get('/api/admin/suggestions/:id', isAuthenticated, (req, res) => {
   try {
     const suggestion = suggestions.find(s => s.id === req.params.id);
-    
-    if (!suggestion) {
-      return res.status(404).json({ error: 'Suggestion not found' });
-    }
-    
+    if (!suggestion) return res.status(404).json({ error: 'Suggestion not found' });
     res.json({ success: true, suggestion });
   } catch (error) {
     console.error('Error fetching suggestion:', error);
@@ -260,48 +224,31 @@ app.get('/api/admin/suggestions/:id', isAuthenticated, (req, res) => {
   }
 });
 
-// PATCH - Update suggestion status
 app.patch('/api/admin/suggestions/:id', isAuthenticated, (req, res) => {
   try {
     const { status } = req.body;
     const suggestionIndex = suggestions.findIndex(s => s.id === req.params.id);
-    
-    if (suggestionIndex === -1) {
-      return res.status(404).json({ error: 'Suggestion not found' });
-    }
-    
+    if (suggestionIndex === -1) return res.status(404).json({ error: 'Suggestion not found' });
     if (status && !['unread', 'read', 'archived', 'responded'].includes(status)) {
       return res.status(400).json({ error: 'Invalid status' });
     }
-    
     suggestions[suggestionIndex] = {
       ...suggestions[suggestionIndex],
       status: status || suggestions[suggestionIndex].status,
       updatedAt: new Date().toISOString()
     };
-    
-    res.json({ 
-      success: true, 
-      message: 'Suggestion updated',
-      suggestion: suggestions[suggestionIndex]
-    });
+    res.json({ success: true, message: 'Suggestion updated', suggestion: suggestions[suggestionIndex] });
   } catch (error) {
     console.error('Error updating suggestion:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-// DELETE - Delete suggestion
 app.delete('/api/admin/suggestions/:id', isAuthenticated, (req, res) => {
   try {
     const suggestionIndex = suggestions.findIndex(s => s.id === req.params.id);
-    
-    if (suggestionIndex === -1) {
-      return res.status(404).json({ error: 'Suggestion not found' });
-    }
-    
+    if (suggestionIndex === -1) return res.status(404).json({ error: 'Suggestion not found' });
     suggestions.splice(suggestionIndex, 1);
-    
     res.json({ success: true, message: 'Suggestion deleted' });
   } catch (error) {
     console.error('Error deleting suggestion:', error);
@@ -309,7 +256,6 @@ app.delete('/api/admin/suggestions/:id', isAuthenticated, (req, res) => {
   }
 });
 
-// GET - Admin statistics
 app.get('/api/admin/statistics', isAuthenticated, (req, res) => {
   try {
     const stats = {
@@ -320,12 +266,9 @@ app.get('/api/admin/statistics', isAuthenticated, (req, res) => {
       responded: suggestions.filter(s => s.status === 'responded').length,
       categories: {}
     };
-    
-    // Count by category
     suggestions.forEach(s => {
       stats.categories[s.category] = (stats.categories[s.category] || 0) + 1;
     });
-    
     res.json({ success: true, statistics: stats });
   } catch (error) {
     console.error('Error fetching statistics:', error);
@@ -347,14 +290,9 @@ app.use((err, req, res, next) => {
 app.listen(PORT, () => {
   console.log(`🚀 Suggestion System Server running on http://localhost:${PORT}`);
   console.log(`📋 Admin panel: http://localhost:${PORT}/admin`);
-  console.log(`🔑 Login with username: ${process.env.ADMIN_USERNAME || 'admin'}`);
-  console.log(`🔒 Password: ${process.env.ADMIN_PASSWORD || 'admin123'}`);
-  console.log(`\n📡 Public API Endpoints (No Auth Required):`);
+  console.log(`🔑 Login: ${process.env.ADMIN_USERNAME || 'admin'} / ${process.env.ADMIN_PASSWORD || 'admin123'}`);
+  console.log(`\n📡 Public API:`);
   console.log(`   GET  /api/suggestions - View all suggestions`);
   console.log(`   GET  /api/suggestions/:id - View single suggestion`);
-  console.log(`   POST /api/suggestions - Submit new suggestion`);
-  console.log(`\n📡 Admin API Endpoints (Auth Required):`);
-  console.log(`   POST /api/admin/login - Admin login`);
-  console.log(`   GET  /api/admin/suggestions - View all suggestions (admin)`);
-  console.log(`   GET  /api/admin/statistics - View statistics`);
+  console.log(`   POST /api/suggestions - Submit new suggestion (name & message required)`);
 });
