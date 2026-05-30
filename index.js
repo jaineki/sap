@@ -18,7 +18,7 @@ app.use(express.static(path.join(__dirname, 'Public')));
 
 // Session configuration
 app.use(session({
-  secret: process.env.SESSION_SECRET || 'default-secret-key',
+  secret: process.env.SESSION_SECRET || 'f8e7d6c5b4a392817065f4e3d2c1b0af8e7d6c5b4a392817065f4e3d2c1b0a9',
   resave: false,
   saveUninitialized: false,
   cookie: {
